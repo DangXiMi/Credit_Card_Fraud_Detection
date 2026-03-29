@@ -1,41 +1,48 @@
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+# src/preprocess.py
 import pandas as pd
+import joblib
+from sklearn.preprocessing import StandardScaler
 
 def load_data(file_path="data/raw/creditcard.csv"):
-    # Load the credit card dataset from a CSV
-    df=pd.read_csv(file_path)
-    return df
+    return pd.read_csv(file_path)
 
-def split_time(df):
-    X = df.drop("Class", axis=1)
-    y = df["Class"]
-
-    # Split 1: 80% Train, 20% Temporary (Validation + Test)
-    X_train, X_temp, y_train, y_temp = train_test_split(
-        X, y, test_size=0.20, stratify=y, random_state=42
-    )
-
-    # Split 2: Split the 20% Temporary set perfectly in half (10% Val, 10% Test)
-    X_val, X_test, y_val, y_test = train_test_split(
-        X_temp, y_temp, test_size=0.50, stratify=y_temp, random_state=42
-    )
-
+def split_time_chronological(df):
+    """Chronological split: 80% train, 10% val, 10% test based on Time."""
+    df_sorted = df.sort_values('Time').reset_index(drop=True)
+    n = len(df_sorted)
+    train_end = int(0.8 * n)
+    val_end = int(0.9 * n)
+    
+    train = df_sorted.iloc[:train_end]
+    val = df_sorted.iloc[train_end:val_end]
+    test = df_sorted.iloc[val_end:]
+    
+    X_train, y_train = train.drop('Class', axis=1), train['Class']
+    X_val, y_val = val.drop('Class', axis=1), val['Class']
+    X_test, y_test = test.drop('Class', axis=1), test['Class']
+    
     return X_train, X_val, X_test, y_train, y_val, y_test
 
-def preprocess_features(X_train, X_test):
-    # Apply StandardScaler to Amount and Time columns
-    """_
-    We have to deal with the Time feature later.
-    """
+def fit_preprocessor(X_train, columns_to_scale=['Amount', 'Time']):
+    """Fit a StandardScaler on the specified columns and return the scaler."""
     scaler = StandardScaler()
-    X_train[["Amount", "Time"]] = scaler.fit_transform(X_train[["Amount", "Time"]])
-    X_test[["Amount", "Time"]] = scaler.transform(X_test[["Amount", "Time"]])
+    scaler.fit(X_train[columns_to_scale])
+    # Save column order (all features)
+    column_order = X_train.columns.tolist()
+    return scaler, column_order
 
-    return X_train, X_test
+def transform_features(X, scaler, columns_to_scale=['Amount', 'Time'], column_order=None):
+    """Transform Amount & Time using the fitted scaler, then ensure column order."""
+    X = X.copy()
+    X[columns_to_scale] = scaler.transform(X[columns_to_scale])
+    if column_order is not None:
+        X = X[column_order]
+    return X
 
-if __name__ == "__main__":
-    df = load_data()
-    X_train, X_val, X_test, y_train, y_val, y_test = split_time(df)
-    X_train, X_test = preprocess_features(X_train, X_test)
-    print(X_train[['Amount', 'Time']])
+def save_preprocessor(scaler, column_order, filepath="models/preprocessor.pkl"):
+    """Save scaler and column order together."""
+    joblib.dump({'scaler': scaler, 'column_order': column_order}, filepath)
+
+def load_preprocessor(filepath="models/preprocessor.pkl"):
+    """Load preprocessor dictionary."""
+    return joblib.load(filepath)

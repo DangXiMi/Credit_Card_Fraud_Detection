@@ -1,48 +1,49 @@
-# src/preprocess.py
+# src/preprocessing.py
 import pandas as pd
-import joblib
-from sklearn.preprocessing import StandardScaler
+import logging
+
+logger = logging.getLogger(__name__)
 
 def load_data(file_path="data/raw/creditcard.csv"):
-    return pd.read_csv(file_path)
+    """Stateless: Just reads the file."""
+    try:
+        return pd.read_csv(file_path)
+    except FileNotFoundError:
+        logger.error(f"File not found at {file_path}")
+        raise
 
-def split_time_chronological(df):
-    """Chronological split: 80% train, 10% val, 10% test based on Time."""
-    df_sorted = df.sort_values('Time').reset_index(drop=True)
+def split_time_chronological(df_sorted, train_size=0.8, val_size=0.1):
+    """
+    Stateless: Logic for data partitioning.
+    Includes feature engineering for Time -> Hour to prevent data leakage
+    """
     n = len(df_sorted)
-    train_end = int(0.8 * n)
-    val_end = int(0.9 * n)
+    
+    train_end = int(train_size * n)
+    val_end = int((train_size + val_size) * n)
     
     train = df_sorted.iloc[:train_end]
     val = df_sorted.iloc[train_end:val_end]
     test = df_sorted.iloc[val_end:]
     
-    X_train, y_train = train.drop('Class', axis=1), train['Class']
-    X_val, y_val = val.drop('Class', axis=1), val['Class']
-    X_test, y_test = test.drop('Class', axis=1), test['Class']
+    def get_xy(data):
+        return data.drop('Class', axis=1), data['Class']
+    
+    X_train, y_train = get_xy(train)
+    X_val, y_val = get_xy(val)
+    X_test, y_test = get_xy(test)
     
     return X_train, X_val, X_test, y_train, y_val, y_test
 
-def fit_preprocessor(X_train, columns_to_scale=['Amount', 'Time']):
-    """Fit a StandardScaler on the specified columns and return the scaler."""
-    scaler = StandardScaler()
-    scaler.fit(X_train[columns_to_scale])
-    # Save column order (all features)
-    column_order = X_train.columns.tolist()
-    return scaler, column_order
+def clean_raw_data(df):
+    """Stateless: Basic cleaning that doesn't depend on statistics."""
+    if 'id' in df.columns:
+        df = df.drop(columns=['id'])
+    df = df.drop_duplicates()
+    
+    df_sorted = df.sort_values('Time').reset_index(drop=True)
+    df_sorted['Hour'] = (df_sorted['Time'] // 3600) % 24
+    df_sorted = df_sorted.drop(columns=['Time'])
+    return df_sorted
 
-def transform_features(X, scaler, columns_to_scale=['Amount', 'Time'], column_order=None):
-    """Transform Amount & Time using the fitted scaler, then ensure column order."""
-    X = X.copy()
-    X[columns_to_scale] = scaler.transform(X[columns_to_scale])
-    if column_order is not None:
-        X = X[column_order]
-    return X
 
-def save_preprocessor(scaler, column_order, filepath="models/preprocessor.pkl"):
-    """Save scaler and column order together."""
-    joblib.dump({'scaler': scaler, 'column_order': column_order}, filepath)
-
-def load_preprocessor(filepath="models/preprocessor.pkl"):
-    """Load preprocessor dictionary."""
-    return joblib.load(filepath)

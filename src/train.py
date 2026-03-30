@@ -1,91 +1,62 @@
-import preprocessing as pp
 import joblib
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import roc_auc_score, average_precision_score, f1_score, confusion_matrix
-import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.metrics import ConfusionMatrixDisplay
+import logging
+import numpy as np # Added numpy
+import preprocessing as pp
+from pipeline import get_pipeline
+from config import SETTINGS
+from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
+from sklearn.metrics import average_precision_score, precision_recall_curve
 
-model = LogisticRegression(
-    max_iter=1000,
-    random_state=42,
-    verbose=True,
-    solver='lbfgs',
-    class_weight='balanced'
-)
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+logger = logging.getLogger(__name__)
 
-def evaluate_model(y_true, y_pred_proba):
-    """Calculates ROC-AUC and Precision-Recall AUC."""
-    auc = roc_auc_score(y_true, y_pred_proba)
+def run_training():
+    logger.info("Loading data...")
+    df = pp.load_data(SETTINGS['paths']['raw_data'])
+    df = pp.clean_raw_data(df)
     
-    pr_auc = average_precision_score(y_true, y_pred_proba) 
-    return auc, pr_auc
+    X_train, X_val, X_test, y_train, y_val, y_test = pp.split_time_chronological(
+        df, 
+        train_size=SETTINGS['train_params']['train_size'],
+        val_size=SETTINGS['train_params']['val_size']
+    )
+    
+    imbalance_ratio = (y_train == 0).sum() / (y_train == 1).sum()
+    tscv = TimeSeriesSplit(n_splits=SETTINGS['train_params']['cv_splits'])
+    
+    base_pipe = get_pipeline(params={}, imbalance_ratio=imbalance_ratio)
+    param_grid = SETTINGS['search_space']
 
-def find_optimal_threshold(model, X_val, y_val):
-    """Finds the threshold that maximizes the F1 score using validation data."""
-    thresholds = []
-    f1_values = [] 
+    search = RandomizedSearchCV(
+        estimator=base_pipe,
+        param_distributions=param_grid,
+        n_iter=SETTINGS['train_params']['n_iter'],
+        scoring='average_precision',
+        cv=tscv,
+        n_jobs=-1,
+        verbose=1,
+        random_state=42
+    )
     
-    # Get probabilities once to save computation time
-    y_pred_proba = model.predict_proba(X_val)[:, 1]
+    logger.info("Starting Search...")
+    search.fit(X_train, y_train)
     
-    for threshold in np.linspace(0.01, 1, 100):
-        y_pred = (y_pred_proba >= threshold).astype(int)
-        
-        f1 = f1_score(y_val, y_pred)
-        f1_values.append(f1)
-        thresholds.append(threshold)
+    logger.info(f"Best Hyperparameters Found: {search.best_params_}")
     
-    optimal_threshold_idx = np.argmax(f1_values)
-    optimal_threshold = thresholds[optimal_threshold_idx]
-    optimal_f1 = f1_values[optimal_threshold_idx]
+    joblib.dump(search.best_estimator_, SETTINGS['paths']['model_output'])
     
-    return optimal_threshold, optimal_f1
-
+    y_probs = search.best_estimator_.predict_proba(X_val)[:, 1]
+    
+    precisions, recalls, thresholds = precision_recall_curve(y_val, y_probs)
+    
+    f1_scores = 2 * (precisions * recalls) / (precisions + recalls + 1e-10)
+    
+    best_idx = np.argmax(f1_scores)
+    best_threshold = thresholds[best_idx]
+    best_f1 = f1_scores[best_idx]
+    
+    logger.info(f"Val PR-AUC: {average_precision_score(y_val, y_probs):.4f}")
+    logger.info(f"Optimal Threshold for F1: {best_threshold:.4f} (Validation F1: {best_f1:.4f})")
 
 if __name__ == "__main__":
-    df = pp.load_data()
-    X_train, X_val, X_test, y_train, y_val, y_test = pp.split_time_chronological(df)
-    
-    # Fit preprocessor on training data only
-    scaler, column_order = pp.fit_preprocessor(X_train)
-    
-    # Transform all splits using the same fitted scaler
-    X_train = pp.transform_features(X_train, scaler, column_order=column_order)
-    X_val = pp.transform_features(X_val, scaler, column_order=column_order)
-    X_test = pp.transform_features(X_test, scaler, column_order=column_order)
-    
-    # Save the preprocessor for later use
-    pp.save_preprocessor(scaler, column_order, "models/preprocessor.pkl")
-    print("Preprocessor saved to models/preprocessor.pkl")
-    
-    # Train baseline model
-    model = LogisticRegression(max_iter=1000, random_state=42,
-                               solver='lbfgs', class_weight='balanced')
-    model.fit(X_train, y_train)
-    
-    # Validation evaluation
-    y_pred_proba_val = model.predict_proba(X_val)[:, 1]
-    auc, pr_auc = evaluate_model(y_val, y_pred_proba_val)
-    print(f"Validation ROC-AUC: {auc:.4f}")
-    print(f"Validation PR-AUC: {pr_auc:.4f}")
-    
-    # Threshold tuning
-    optimal_threshold, optimal_f1 = find_optimal_threshold(model, X_val, y_val)
-    print(f"Optimal Threshold: {optimal_threshold:.2f}")
-    print(f"Best Validation F1 Score: {optimal_f1:.4f}")
-
-    # 3. Create the visual plot
-    y_true = y_val
-    y_pred = (y_pred_proba_val >= optimal_threshold).astype(int)
-    cm = confusion_matrix(y_true, y_pred)
-
-    fig, ax = plt.subplots(figsize=(6, 5))
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, 
-                                display_labels=['Normal (0)', 'Fraud (1)'])
-
-    # values_format='d' ensures it prints whole numbers instead of scientific notation
-    disp.plot(cmap='Blues', values_format='d', ax=ax)
-
-    plt.title(f'Confusion Matrix (Threshold: {optimal_threshold:.2f})')
-    plt.show()
+    run_training()

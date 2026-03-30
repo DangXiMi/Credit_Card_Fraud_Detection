@@ -1,0 +1,17 @@
+paths:
+  raw_data: "data/raw/creditcard.csv"
+  model_output: "models/model_pipeline.pkl"
+
+train_params:
+  train_size: 0.8
+  val_size: 0.1
+  n_iter: 15
+  cv_splits: 5
+
+search_space:
+  classifier__max_depth: [3, 5, 7, 9]
+  classifier__learning_rate: [0.01, 0.05, 0.1, 0.2]
+  classifier__n_estimators: [100, 300, 500]
+  classifier__subsample: [0.6, 0.8, 1.0]
+  classifier__colsample_bytree: [0.6, 0.8, 1.0]
+  classifier__max_delta_step: [0, 2, 5, 10]

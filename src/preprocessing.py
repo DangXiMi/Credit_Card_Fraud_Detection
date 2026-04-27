@@ -1,5 +1,6 @@
 # src/preprocessing.py
 import pandas as pd
+import numpy as np
 import logging
 
 logger = logging.getLogger(__name__)
@@ -35,14 +36,14 @@ def split_time_chronological(df_sorted, train_size=0.8, val_size=0.1):
     
     return X_train, X_val, X_test, y_train, y_val, y_test
 
-def clean_raw_data(df):
+def clean_raw_data(df, log_amount=False):
     """Stateless: Basic cleaning that doesn't depend on statistics."""
-    if 'id' in df.columns:
-        df = df.drop(columns=['id'])
     df = df.drop_duplicates()
     
     df_sorted = df.sort_values('Time').reset_index(drop=True)
     df_sorted['Hour'] = (df_sorted['Time'] // 3600) % 24
+    if log_amount:
+        df_sorted['Amount'] = np.log1p(df_sorted['Amount'])
     df_sorted = df_sorted.drop(columns=['Time'])
     return df_sorted
 

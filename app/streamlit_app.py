@@ -32,18 +32,16 @@ def prepare_features(df_raw):
     """Convert raw input (with Time, Amount, V1..V28) to model-ready features."""
     df = df_raw.copy()
     
-    required_cols = [f"V{i}" for i in range(1, 29)] + ["Time", "Amount"]
+    required_cols = ["Time"] + [f"V{i}" for i in range(1, 29)] + ["Amount"]
     missing = set(required_cols) - set(df.columns)
     if missing:
         st.error(f"Missing required columns: {missing}")
         return None
     
     df['Hour'] = (df['Time'] // 3600) % 24
-    df = df.drop(columns=['Time'])
-    
-    # IMPORTANT: Order must match training (V1..V28, Amount, Hour)
-    expected_order = [f"V{i}" for i in range(1, 29)] + ["Amount", "Hour"]
-    df = df[expected_order]
+
+    # Keep Time, order exactly as training
+    df = df[required_cols + ['Hour']]
     return df
 
 # ---------- UI ----------

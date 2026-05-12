@@ -20,11 +20,11 @@ class Transaction(BaseModel):
     
     def to_dataframe(self):
         # Convert to DataFrame with correct column names
-        cols = [f"V{i}" for i in range(1, 29)] + ["Amount", "Time"]
+        cols = ["Time"] + [f"V{i}" for i in range(1, 29)] + ["Amount"]
         df = pd.DataFrame([self.features], columns=cols)
         # Feature engineering (same as training)
         df['Hour'] = (df['Time'] // 3600) % 24
-        df = df.drop(columns=['Time'])
+        df = df[cols + ['Hour']]
         return df
 
 @app.post("/predict")

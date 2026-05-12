@@ -9,7 +9,7 @@ from sklearn.metrics import average_precision_score, precision_recall_curve, rec
 
 def run_training():
     # Load & prep
-    df = pp.clean_raw_data(pp.load_data(SETTINGS['paths']['raw_data']))
+    df = pp.load_data(SETTINGS['paths']['raw_data'])
     X_train, X_val, X_test, y_train, y_val, y_test = pp.split_time_chronological(
         df, SETTINGS['train_params']['train_size'], SETTINGS['train_params']['val_size']
     )
@@ -35,13 +35,14 @@ def run_training():
 
     # ---------- Threshold selection using max F1 (skip threshold=0 and inf) ----------
     precisions, recalls, thresholds = precision_recall_curve(y_val, y_val_proba)
-    valid_prec = precisions[1:-1]      
-    valid_rec = recalls[1:-1]
-    valid_thresh = thresholds
+    valid_prec = precisions[:-1]
+    valid_rec  = recalls[:-1]
+    valid_thresh = thresholds      
 
     f1_scores = 2 * (valid_prec * valid_rec) / (valid_prec + valid_rec + 1e-10)
     best_idx = np.argmax(f1_scores)
     threshold = valid_thresh[best_idx]
+
     best_f1 = f1_scores[best_idx]
     best_rec = valid_rec[best_idx]
     best_prec = valid_prec[best_idx]
@@ -70,17 +71,17 @@ def run_training():
     print(test_cm)
 
     # Save artifacts
-    joblib.dump({
-        'pipeline': final,
-        'threshold': threshold,
-        'test_metrics': {
-            'recall': test_recall,
-            'precision': test_precision,
-            'pr_auc': test_pr_auc,
-            'f1': 2*test_recall*test_precision/(test_recall+test_precision+1e-10)
-        }
-    }, SETTINGS['paths']['model_output'])
-    print("Done.")
+    # joblib.dump({
+    #     'pipeline': final,
+    #     'threshold': threshold,
+    #     'test_metrics': {
+    #         'recall': test_recall,
+    #         'precision': test_precision,
+    #         'pr_auc': test_pr_auc,
+    #         'f1': 2*test_recall*test_precision/(test_recall+test_precision+1e-10)
+    #     }
+    # }, SETTINGS['paths']['model_output'])
+    # print("Done.")
 
 if __name__ == "__main__":
     run_training()

@@ -12,3 +12,13 @@ def get_pipeline(params, imbalance_ratio):
         ))
     ])
     return pipeline
+
+
+def build_pipeline(scale_pos_weight: float) -> Pipeline:
+    model = XGBClassifier(
+        scale_pos_weight=scale_pos_weight,
+        max_delta_step=1,
+        eval_metric='logloss',
+        random_state=42
+    )
+    return Pipeline([('classifier', model)])
